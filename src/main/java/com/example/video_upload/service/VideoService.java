@@ -7,13 +7,14 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 
 @Service
 public class VideoService {
+
     private final VideoRepository videoRepository;
-    private List<Video> videoQueue;
-    private Map<Long, Integer> videoShowCount;
+    private final Queue<Video> videoQueue = new LinkedList<>();
 
     @Autowired
     public VideoService(VideoRepository videoRepository) {
@@ -22,46 +23,81 @@ public class VideoService {
     }
 
     private void loadVideoQueue() {
-        videoQueue = videoRepository.findAll();
-        videoShowCount = new HashMap<>();
-        for (Video video : videoQueue) {
-            videoShowCount.put(video.getId(), 0);
+        List<Video> allVideos = videoRepository.findAll();
+        videoQueue.clear();
+
+        for (Video video : allVideos) {
+            if (LocalDate.now().isBefore(video.getEndDate())) {
+                videoQueue.offer(video);
+            }
         }
     }
 
     public Video getNextVideo() {
-        return videoQueue.stream()
-                .filter(video -> videoShowCount.get(video.getId()) < video.getRate()
-                        && LocalDate.now().isBefore(video.getEndDate()))
-                .findFirst()
-                .map(video -> {
-                    videoShowCount.put(video.getId(), videoShowCount.get(video.getId()) + 1);
-                    return video;
-                }).orElse(null);
+        LocalDate now = LocalDate.now();
+
+        for (Video video : videoQueue) {
+            if (now.isBefore(video.getEndDate())) {
+                return video;
+            }
+        }
+        return null;
     }
 
-    public void addVideo(Video video) {
-        videoRepository.save(video);
-        loadVideoQueue();
+    @Scheduled(fixedRate = 600000)
+    public void removeExpiredVideos() {
+        LocalDate now = LocalDate.now();
+        List<Video> expiredVideos = new ArrayList<>();
+
+        for (Video video : videoQueue) {
+            if (now.isAfter(video.getEndDate())) {
+                expiredVideos.add(video);
+            }
+        }
+
+        for (Video video : expiredVideos) {
+            deleteVideo(video);
+        }
+    }
+
+    private void deleteVideo(Video video) {
+        videoRepository.delete(video);
+        String fileKey = video.getUrl().substring(video.getUrl().lastIndexOf("/") + 1);
+        System.out.println("Удалено видео: " + video.getTitle());
+    }
+
+    public Video createAndSaveVideo(String title, int duration, boolean isMinutes, String videoUrl) {
+        LocalDate uploadDate = LocalDate.now();
+        LocalDateTime startOfDay = uploadDate.atStartOfDay();
+        LocalDateTime endDate = isMinutes
+                ? startOfDay.plusMinutes(duration)
+                : startOfDay.plusMonths(duration);
+
+        Long newId = findAvailableId(); // Поиск наименьшего доступного ID
+
+        Video video = new Video(newId, title, duration, uploadDate, endDate.toLocalDate(), videoUrl);
+        return videoRepository.save(video);
+    }
+
+    // Метод для поиска наименьшего доступного ID
+    private Long findAvailableId() {
+        List<Long> usedIds = videoRepository.findAllIds(); // Получаем все существующие ID
+        Long id = 1L;
+        while (usedIds.contains(id)) {
+            id++;
+        }
+        return id; // Возвращаем наименьший доступный ID
     }
 
     public List<Video> getAllVideos() {
         return videoRepository.findAll();
     }
 
-    public Video getVideoByTitle(String title) {
-        return videoRepository.findByTitle(title).orElse(null);
+    public Video getVideoById(Long id) {
+        return videoRepository.findById(id).orElse(null);
     }
 
-    public void removeVideo(String title) {
-        videoRepository.findByTitle(title).ifPresent(video -> {
-            videoRepository.delete(video);
-            loadVideoQueue();
-        });
-    }
-
-    @Scheduled(fixedRate = 3600000)
-    public void resetShowCounts() {
-        videoShowCount.replaceAll((id, count) -> 0);
+    public void removeVideo(Long id) {
+        videoRepository.findById(id).ifPresent(videoRepository::delete);
     }
 }

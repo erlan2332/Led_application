@@ -8,12 +8,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 
 import java.io.IOException;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -36,60 +35,63 @@ public class VideoUploadController {
     public ResponseEntity<String> uploadVideo(
             @RequestParam("file") MultipartFile file,
             @RequestParam("title") String title,
-            @RequestParam(value = "rate", required = false, defaultValue = "5") Integer rate,
-            @RequestParam("duration") int duration) {
+            @RequestParam("duration") int duration,
+            @RequestParam(value = "isMinutes", defaultValue = "false") boolean isMinutes) {
+
+        if (file.isEmpty() || title == null || title.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("Invalid file or title input.");
+        }
+
         try {
             String uniqueFileName = UUID.randomUUID().toString() + "_" + file.getOriginalFilename();
-            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(uniqueFileName)
-                    .contentType(file.getContentType())
-                    .build();
-            s3Client.putObject(putObjectRequest, RequestBody.fromBytes(file.getBytes()));
+            s3Client.putObject(
+                    PutObjectRequest.builder()
+                            .bucket(bucketName)
+                            .key(uniqueFileName)
+                            .contentType(file.getContentType())
+                            .build(),
+                    RequestBody.fromBytes(file.getBytes())
+            );
 
             String videoUrl = s3Client.utilities().getUrl(builder -> builder.bucket(bucketName).key(uniqueFileName)).toExternalForm();
-            LocalDate uploadDate = LocalDate.now();
-            LocalDate endDate = uploadDate.plusMonths(duration);
+            Video savedVideo = videoService.createAndSaveVideo(title, duration, isMinutes, videoUrl);
 
-            Video video = new Video(title, rate, duration, uploadDate, endDate, videoUrl);
-            videoService.addVideo(video);
-
-            return ResponseEntity.status(HttpStatus.OK).body("Uploaded video: " + title);
+            return ResponseEntity.ok("Uploaded video with ID: " + savedVideo.getId());
         } catch (IOException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload video due to IO error.");
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload video: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("File upload error: " + e.getMessage());
         }
     }
 
     @GetMapping("/list")
     public ResponseEntity<List<Video>> listVideos() {
-        List<Video> videos = videoService.getAllVideos();
-        return ResponseEntity.ok(videos);
+        return ResponseEntity.ok(videoService.getAllVideos());
     }
 
-    @DeleteMapping("/delete/{title}")
-    public ResponseEntity<String> deleteVideo(@PathVariable String title) {
+    @DeleteMapping("/delete/{id}")
+    public ResponseEntity<String> deleteVideo(@PathVariable Long id) {
         try {
-            Video video = videoService.getVideoByTitle(title);
-            if (video != null) {
-                s3Client.deleteObject(DeleteObjectRequest.builder()
-                        .bucket(bucketName)
-                        .key(video.getUrl().substring(video.getUrl().lastIndexOf("/") + 1))
-                        .build());
-                videoService.removeVideo(title);
-                return ResponseEntity.ok("Deleted video: " + title);
-            } else {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Video not found.");
+            Video video = videoService.getVideoById(id);
+            if (video == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Video not found with ID: " + id);
             }
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to delete video.");
+
+            String fileKey = video.getUrl().substring(video.getUrl().lastIndexOf("/") + 1);
+            deleteVideoFromS3(fileKey);
+            videoService.removeVideo(id);
+
+            return ResponseEntity.ok("Deleted video with ID: " + id);
+        } catch (RuntimeException e) {
+            System.err.println("Deletion error: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to delete video: " + e.getMessage());
         }
     }
 
-    @GetMapping("/next")
-    public ResponseEntity<Video> getNextVideo() {
-        Video video = videoService.getNextVideo();
-        return video != null ? ResponseEntity.ok(video) : ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+    private void deleteVideoFromS3(String fileKey) {
+        try {
+            s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucketName).key(fileKey).build());
+        } catch (Exception e) {
+            System.err.println("Error deleting from S3: " + e.getMessage());
+            throw new RuntimeException("Failed to delete video from S3", e);
+        }
     }
 }
