@@ -73,20 +73,19 @@ public class VideoService {
                 ? startOfDay.plusMinutes(duration)
                 : startOfDay.plusMonths(duration);
 
-        Long newId = findAvailableId(); // Поиск наименьшего доступного ID
+        Long newId = findAvailableId();
 
         Video video = new Video(newId, title, duration, uploadDate, endDate.toLocalDate(), videoUrl);
         return videoRepository.save(video);
     }
 
-    // Метод для поиска наименьшего доступного ID
     private Long findAvailableId() {
-        List<Long> usedIds = videoRepository.findAllIds(); // Получаем все существующие ID
+        List<Long> usedIds = videoRepository.findAllIds(); 
         Long id = 1L;
         while (usedIds.contains(id)) {
             id++;
         }
-        return id; // Возвращаем наименьший доступный ID
+        return id;
     }
 
     public List<Video> getAllVideos() {
