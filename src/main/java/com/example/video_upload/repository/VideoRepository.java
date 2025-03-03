@@ -13,6 +13,6 @@ public interface VideoRepository extends JpaRepository<Video, Long> {
 
     Optional<Video> findByTitle(String title);
 
-    @Query("SELECT v.id FROM Video v")  // JPQL-запрос для получения всех ID
+    @Query("SELECT v.id FROM Video v")  
     List<Long> findAllIds();
 }
