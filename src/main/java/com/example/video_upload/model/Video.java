@@ -7,18 +7,16 @@ import java.time.LocalDate;
 public class Video {
 
     @Id
-    private Long id; // Убираем @GeneratedValue для ручного назначения ID
+    private Long id;
 
-    private String title;  // Название видео
-    private int duration;  // Продолжительность показа в месяцах или минутах (зависит от флага)
-    private LocalDate uploadDate; // Дата загрузки
-    private LocalDate endDate;    // Дата окончания показа
-    private String url;    // URL видео в S3
+    private String title;
+    private int duration;
+    private LocalDate uploadDate;
+    private LocalDate endDate;   
+    private String url;    
 
-    // Пустой конструктор, необходим для JPA
     public Video() {}
 
-    // Конструктор для инициализации всех полей, включая ID
     public Video(Long id, String title, int duration, LocalDate uploadDate, LocalDate endDate, String url) {
         this.id = id;
         this.title = title;
@@ -28,7 +26,6 @@ public class Video {
         this.url = url;
     }
 
-    // Геттеры и сеттеры для всех полей
     public Long getId() {
         return id;
     }
@@ -77,7 +74,6 @@ public class Video {
         this.url = url;
     }
 
-    // Переопределённый метод toString для удобства отображения объекта в логах и отладке
     @Override
     public String toString() {
         return "Video{" +
