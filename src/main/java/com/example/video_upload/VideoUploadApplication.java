@@ -1,4 +1,3 @@
-// VideoUploadApplication.java
 package com.example.video_upload;
 
 import org.springframework.boot.SpringApplication;
